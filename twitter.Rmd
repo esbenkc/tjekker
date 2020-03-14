@@ -1,0 +1,177 @@
+---
+title: "Sentiment analysis and Twitter mining"
+author: "Adam finnemann, updated by Telma Peura"
+date: "November 11, 2019"
+---
+  
+  
+  
+Scraping tweets is surprisingly easy. First you need to connect R to Twitter's API. Load pacman and use it to get the necessary R packages. Secondly you need to provide keys and secret from your Twitter App to R.
+
+```{r}
+library(pacman)
+p_load("twitteR", "ROAuth", "instaR", "tidyverse", "tidytext", "stringr") #packages for webscraping from R
+
+consumer_key <- "g4SfvJprquMWFghRJaK8AUGiW"
+consumer_secret <- "tyO2KCYwxNn5r2VnqR9pnfVx6KHKCQYUBqhP88a7234NBEri01"
+access_token <- "1229683640877092865-2U3mUcMp4XQBFNf74EqjXyrnrNWwJi"
+access_secret <- "rYopCzidCZUHuqQ0Up7Z3PfIaTnRbL5E7dng4tzBcUZ7D"
+
+setup_twitter_oauth(consumer_key, consumer_secret, access_token, access_secret)
+
+
+```
+
+SCRAPING TWITTER:
+The function searchTwitter does the hard job for it. It's first argument is a searchword, which either be a hashtag fx "#cogsci", or tweets from a person fx "from:KristanTyl?n". You can include "-filter:retweets" to remove retweets. You should do that.
+
+Using "since" and "until" you can specify period of search. However, it's not possible to retrieve tweets older than 14 days (given our current level of access). 
+"lang" refers to the language of tweets. 
+
+There is a limit to how many tweets you can access before you have to wait some time, "retryOnRateLimit" is delay used when the function gets a warning from Twitter.
+The function "twLIstToDF" turns the return from "searchTwitter" into a nice looking data frame - check it out.
+```{r}
+
+Tweets  <-
+  searchTwitter(
+    "#coronadk",
+    n = 1000,
+    since = '2020-02-01',
+    until = '2020-03-14',
+    retryOnRateLimit = 120
+  )
+
+
+#run two seperate scrapes and save them into different dataframes
+tweet_1 <- twListToDF(Tweets)
+tweet_2 <- twListToDF(Tweets)
+
+write.csv(tweet_1, file = "200314-coronadk.csv") #save your data if you want to.
+
+
+```
+
+
+
+Here is a function to include the sentiment scores in the data frame.
+
+DO NOT change anything inside the funtion - (inside the curly brackets)
+instead, apply the function like any other as shown right below it
+```{r}
+get_sentiment <- function(df, dictionary = "bing"){
+  
+  reg_words <- "([^A-Za-z_\\d#@']|'(?![A-Za-z_\\d#@]))"
+  
+  tidy_df <-df %>%
+    filter(!str_detect(text, "^RT")) %>% #filtering out tweets starting with RT: retweets
+    mutate(text = str_replace_all(text, "https://t.co/[A-Za-z\\d]+|http://[A-Za-z\\d]+|&amp;|&lt;|&gt;|RT|https", "")) %>% #removes homepage adresses and unecessary stuff
+    unnest_tokens(word, text, token = "regex", pattern = reg_words) %>% #removes unnests text document
+    filter(!word %in% stop_words$word) #removes stop words
+  
+  
+  
+  sentiment_df <- tidy_df %>% 
+    inner_join(get_sentiments(dictionary)) # add sentiment score by word
+  
+  return(sentiment_df)
+}
+
+#Applying function:
+tweet1 <- get_sentiment(tweet_1, dictionary = "bing" )
+tweet2 <- get_sentiment(tweet_2, dictionary = "bing" )
+
+# have a look at the lexicon here:
+head(get_sentiments("bing"), n=10)
+
+```
+
+
+I've written a little function which compares two sentiment dataframes.
+It takes two data frames, df1 and df1 as arguments, togehter with two hashtags. The hashtags are only used for naming plots, and aren't necessary to provide.
+DO NOT change anything inside the funtion - (inside the curly brackets)
+instead, apply the function like any other as shown right below it
+```{r}
+
+comparing_sentiments <- function(df1, df2, hashtag1 = "df1", hashtag2 = "df2") {
+
+  sentiment_score1 <- df1 %>%
+  group_by(sentiment) %>%  # we group by sentiment
+  summarise(proportion = n() / nrow(df1), #calculating as proportion of total tweets
+            group = hashtag1) #we add a column with hashtag1
+  
+  sentiment_score2 <-df2 %>% #we repeat the procedure for our second df 
+  group_by(sentiment) %>% 
+  summarise(proportion = n() / nrow(df2),
+            group = hashtag2)
+  
+  #we combine the two data frames
+  plot_df <- rbind(sentiment_score2, sentiment_score1)
+  
+  #lastly we make a plot
+  plot_df %>%  
+  ggplot(aes(sentiment, proportion, fill = group)) +
+    theme(legend.title = element_blank(), legend.position ="none")+
+    geom_col(aes(fill=sentiment)) +
+    scale_fill_manual(values = c("#00AFBB", "#E8415C"))+
+    facet_grid(.~group)
+
+}
+
+comparing_sentiments(tweet1, tweet2, hashtag1 = "#", hashtag2 = "#")
+
+```
+
+Exercise: 
+Get into groups where at least one person is able to mine Twitter. You'r job is now to use Twitter mining together with our functions to compare Tweets your find interesting. Secondly, find the most positive hashtag wih minimum 1000 Tweets execluding retweets.
+Your will have to present your findings in 2 min presentations in the end. 
+
+Here is a nearly finished example
+```{r}
+
+p_load(textdata)
+senti1 <- searchTwitter("#gop -filter:retweets", n = 1000, since='2019-11-02', until='2019-11-09', lang = "en", retryOnRateLimit = 120) %>% 
+twListToDF() %>% get_sentiment("bing")
+
+senti2  <- searchTwitter("#brexit -filter:retweets", n = 1000, since='2019-11-02', until='2019-11-09', lang = "en", retryOnRateLimit = 120) %>%
+twListToDF() %>% get_sentiment("bing")
+
+colnames(senti1)[17] <- "sentiment"
+
+for(i in senti2[,"sentiment"]){
+  ifelse(i == "positive", i <- 1, i  <- -1)
+}
+
+senti2[,"sentiment"]
+
+comparing_sentiments(senti1, senti2, "gop", "brexit")
+
+```
+
+Now you can have a look at the most popular words by sentiment
+```{r}
+# make a summary df with word count
+tweet_words <- tweet1 %>% # put the name of your tweet df
+  group_by(word) %>%
+  summarise(word_count = n(), sentiment = unique(sentiment))
+
+# get 10 most frequent words
+tweet_words %>%
+  group_by(sentiment) %>%
+  top_n(5,word_count) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, word_count)) %>%
+  ggplot(aes(word, word_count, fill = sentiment)) +
+  scale_fill_manual(values = c("#00AFBB", "#FC4E07"))+
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(y = "Contribution to sentiment",
+       x = NULL) +
+  coord_flip()
+
+# make a word cloud to visualize
+tweet_words %>%
+  with(wordcloud(word, word_count,max.words=100, min.freq =2,scale=c(3,.2)))
+
+
+```
+
