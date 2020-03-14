@@ -34,7 +34,7 @@ The function "twLIstToDF" turns the return from "searchTwitter" into a nice look
 
 Tweets  <-
   searchTwitter(
-    "#coronadk",
+    "#coronadk -filter:retweets",
     n = 1000,
     since = '2020-02-01',
     until = '2020-03-14',
